@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Multiplication Table — Frontend</title>
+  <style>
+    :root{--bg:#f9fab5;--card:#6f80a2;--accent:#7dd3fc;--muted:#94a3b8}
+    body{font-family:Inter,ui-sans-serif,system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; background:linear-gradient(180deg,#071127 0%, #0b1220 100%); color:#e6eef8; margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px}
+    .card{width:100%; max-width:880px; background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); border:1px solid rgba(255,255,255,0.04); border-radius:16px; padding:20px; box-shadow:0 6px 30px rgba(2,6,23,0.6)}
+    h1{margin:0 0 8px 0; font-size:20px}
+    p.lead{color:var(--muted); margin:0 0 18px 0}
+    .row{display:flex; gap:12px; flex-wrap:wrap}
+    label{display:block; font-size:13px; color:var(--muted); margin-bottom:6px}
+    input[type=number], select{padding:10px 12px; border-radius:8px; border:1px solid rgba(255,255,255,0.06); background:transparent; color:inherit; min-width:120px}
+    .controls{display:flex; gap:12px; margin-top:12px}
+    button{background:var(--accent); color:#012; border:none; padding:10px 12px; border-radius:10px; cursor:pointer; font-weight:600}
+    button.ghost{background:transparent; border:1px solid rgba(255,255,255,0.06); color:var(--muted)}
+    .output{margin-top:18px}
+    .table-wrap{background:rgba(255,255,255,0.02); padding:12px; border-radius:10px; max-height:420px; overflow:auto}
+    table{width:100%; border-collapse:collapse}
+    td, th{padding:8px 6px; text-align:left; border-bottom:1px dashed rgba(255,255,255,0.03)}
+    .meta{display:flex; gap:12px; align-items:center; margin-top:8px}
+    pre{white-space:pre-wrap; margin:0}
+    .hint{font-size:13px; color:var(--muted)}
+    @media (max-width:640px){ .row{flex-direction:column} }
+  </style>
+</head>
+<body>
+  <main class="card" role="main">
+    <h1>Multiplication Table </h1>
+    <p class="lead">Enter a number and generate its multiplication table.</p>
+
+    <div class="row">
+      <div style="flex:1; min-width:220px">
+        <label for="number">Number</label>
+        <input id="number" type="number" value="2" />
+      </div>
+
+      <div style="width:160px">
+        <label for="upto">Upto (rows)</label>
+        <input id="upto" type="number" value="10" min="1" />
+      </div>
+
+      <div style="width:220px">
+        <label for="mode">Mode</label>
+        <select id="mode">
+          <option value="js">Run in JavaScript </option>
+        
+        </select>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button id="gen">Generate</button>
+      <button class="ghost" id="clear">Clear</button>
+      <button class="ghost" id="copy">Copy as text</button>
+      <button class="ghost" id="download">Download .txt</button>
+      <div style="flex:1"></div>
+    </div>
+
+    <div class="output">
+      <div class="meta">
+        <div class="hint">Output:</div>
+        <div id="status" class="hint"></div>
+      </div>
+
+      <div class="table-wrap" id="resultArea" role="region" aria-live="polite">
+        <table id="resultTable" hidden>
+          <thead><tr><th>Expression</th><th>Result</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <pre id="resultText">No table generated yet.</pre>
+      </div>
+    </div>
+
+    <hr style="margin:18px 0; opacity:0.06" />
+
+
+  </main>
+
+  <script>
+    // --- UI helpers ---
+    const numberInput = document.getElementById('number');
+    const uptoInput = document.getElementById('upto');
+    const modeSelect = document.getElementById('mode');
+    const genBtn = document.getElementById('gen');
+    const clearBtn = document.getElementById('clear');
+    const copyBtn = document.getElementById('copy');
+    const dlBtn = document.getElementById('download');
+    const resultText = document.getElementById('resultText');
+    const resultTable = document.getElementById('resultTable');
+    const resultTbody = resultTable.querySelector('tbody');
+    const status = document.getElementById('status');
+
+    function renderPlainText(n, upto){
+      let lines = [];
+      for(let i=1;i<=upto;i++) lines.push(`${n} x ${i} = ${n*i}`);
+      return lines.join('\n');
+    }
+
+    function renderTable(n, upto){
+      resultTbody.innerHTML='';
+      for(let i=1;i<=upto;i++){
+        const tr = document.createElement('tr');
+        const expr = document.createElement('td'); expr.textContent = `${n} x ${i}`;
+        const res = document.createElement('td'); res.textContent = String(n*i);
+        tr.appendChild(expr); tr.appendChild(res);
+        resultTbody.appendChild(tr);
+      }
+    }
+
+    async function generate(){
+      const n = Number(numberInput.value);
+      const upto = Math.max(1, Number(uptoInput.value) || 10);
+      if(!Number.isFinite(n)) return alert('Please enter a valid number');
+
+      status.textContent = modeSelect.value === 'js' ? 'computed locally' : 'calling backend...';
+
+      if(modeSelect.value === 'js'){
+        resultTable.hidden = false;
+        resultText.textContent = '';
+        renderTable(n, upto);
+        resultText.hidden = true;
+        status.textContent = 'Done';
+      } else {
+        // POST to /table expecting JSON: { n: number, upto: number }
+        try{
+          const resp = await fetch('/table', {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({n, upto})
+          });
+          if(!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          const data = await resp.json();
+          // expect { lines: ["7 x 1 = 7", ...] } or {table: [[expr,res],...]} from your C backend
+          if(data.lines){
+            resultTable.hidden = true;
+            resultText.hidden = false;
+            resultText.textContent = data.lines.join('\n');
+            status.textContent = 'Done';
+          } else if(data.table){
+            resultTable.hidden = false; resultText.hidden = true;
+            resultTbody.innerHTML = '';
+            data.table.forEach(row => {
+              const tr=document.createElement('tr');
+              const td1=document.createElement('td'); td1.textContent=row[0];
+              const td2=document.createElement('td'); td2.textContent=row[1];
+              tr.appendChild(td1); tr.appendChild(td2); resultTbody.appendChild(tr);
+            })
+            status.textContent = 'Done';
+          } else {
+            resultTable.hidden = true; resultText.hidden = false;
+            resultText.textContent = JSON.stringify(data, null, 2);
+            status.textContent = 'Done';
+          }
+        }catch(err){
+          status.textContent = 'error: ' + err.message;
+          resultText.hidden = false; resultText.textContent = 'Error fetching backend — check console.';
+          console.error(err);
+        }
+      }
+    }
+
+    genBtn.addEventListener('click', generate);
+    clearBtn.addEventListener('click', ()=>{
+      resultText.textContent = 'No table generated yet.'; resultText.hidden = false; resultTable.hidden = true; status.textContent='';
+    });
+
+    copyBtn.addEventListener('click', ()=>{
+      const n=Number(numberInput.value), upto=Math.max(1, Number(uptoInput.value)||10);
+      const txt = renderPlainText(n, upto);
+      navigator.clipboard.writeText(txt).then(()=>{
+        status.textContent = 'copied to clipboard';
+      }).catch(e=>{ status.textContent = 'copy failed'; console.error(e)});
+    });
+
+    dlBtn.addEventListener('click', ()=>{
+      const n=Number(numberInput.value), upto=Math.max(1, Number(uptoInput.value)||10);
+      const txt = renderPlainText(n, upto);
+      const blob = new Blob([txt], {type:'text/plain'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = `table-${n}.txt`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+      status.textContent = 'download started';
+    });
+
+    // Allow pressing Enter to generate when focused in inputs
+    [numberInput, uptoInput].forEach(el=>el.addEventListener('keydown', e=>{ if(e.key==='Enter') generate(); }));
+
+  </script>
+</body>
+</html>
